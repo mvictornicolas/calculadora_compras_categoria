@@ -462,7 +462,7 @@
 
             budgetData.sessions.forEach(session => {
                 const sessionCard = document.createElement('div');
-                sessionCard.className = 'bg-white rounded-lg shadow p-4 border border-gray-200 flex items-center justify-between hover:bg-gray-50 transition-colors';
+                sessionCard.className = 'bg-white rounded-lg shadow p-4 border border-gray-200 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer'; // Adicionando cursor-pointer
                 sessionCard.innerHTML = `
                     <div class="flex items-center justify-between flex-1 pr-4">
                         <span class="font-semibold text-gray-800">${session.name}</span>
@@ -479,17 +479,22 @@
                             </button>
                         </div>
                     </div>
-                    <button class="flex-none p-2 rounded-full hover:bg-gray-100 transition-colors" data-session-id="${session.id}">
+                    <button class="flex-none p-2 rounded-full hover:bg-gray-100 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                         </svg>
                     </button>
                 `;
-                sessionCard.querySelector('button[data-session-id]').addEventListener('click', () => {
+                // Atribuindo o evento de clique ao cartão inteiro
+                sessionCard.addEventListener('click', (e) => {
+                    // Previne que o clique nos botões internos ative o clique do cartão
+                    if (e.target.closest('.rename-session-btn') || e.target.closest('.delete-session-btn')) {
+                        return;
+                    }
                     activeSessionId = session.id;
                     updateUI();
                 });
-
+                
                 sessionsList.appendChild(sessionCard);
 
                 // Event Listeners para botões de sessão
