@@ -243,22 +243,12 @@
         </div>
     </div>
 
-    <!-- Firebase Scripts -->
+    <!-- Scripts da Aplicação -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, onSnapshot, collection, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Configurações e variáveis globais
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
         
-        let db;
-        let auth;
-        let userId;
         let currentCategories = [];
         let activeCategoryId = null;
+        let budgetData = { totalBudget: 0, categories: [] };
 
         // Referências do DOM
         const loadingMessage = document.getElementById('loading-message');
@@ -290,8 +280,6 @@
 
         const composeButtons = document.querySelectorAll('.btn-compose');
 
-        setLogLevel('Debug');
-
         // Referências do Modal de Categoria
         const categoryModal = document.getElementById('category-modal');
         const modalTitle = document.getElementById('modal-title');
@@ -307,132 +295,93 @@
         const renameCategoryBtn = document.getElementById('rename-category-btn');
         const deleteCategoryBtn = document.getElementById('delete-category-btn');
 
-        // Variável global para armazenar o valor antigo do saldo inicial
-        let oldInitialAmount = 0;
-
-        // --- Funções Firebase ---
-        async function initializeFirebase() {
-            try {
-                if (!firebaseConfig) {
-                    console.error("Firebase config is not defined.");
-                    return;
-                }
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                if (typeof __initial_auth_token !== 'undefined') {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-                userId = auth.currentUser?.uid || crypto.randomUUID();
-                console.log("Usuário autenticado:", userId);
-
-                setupListeners();
-            } catch (error) {
-                console.error("Erro ao inicializar o Firebase ou autenticar:", error);
-                loadingMessage.innerHTML = "<p class='text-red-500'>Erro ao carregar o aplicativo. Tente novamente.</p>";
-            }
+        // --- Funções de Persistência (localStorage) ---
+        function saveData() {
+            localStorage.setItem('budgetAppData', JSON.stringify(budgetData));
         }
 
-        function setupListeners() {
-            const mainBudgetDocRef = doc(db, `artifacts/${appId}/users/${userId}/budgets`, 'mainBudget');
-            onSnapshot(mainBudgetDocRef, (docSnap) => {
-                const data = docSnap.data();
-                if (data && data.total) {
-                    totalBudgetInput.value = data.total;
-                } else {
-                    totalBudgetInput.value = 0;
-                }
-                calculateRemainingBalance();
-            }, (error) => {
-                console.error("Erro ao ouvir o Saldo Total:", error);
-            });
+        function loadData() {
+            const storedData = localStorage.getItem('budgetAppData');
+            if (storedData) {
+                budgetData = JSON.parse(storedData);
+            }
+            // Inicializa variáveis com base nos dados carregados
+            currentCategories = budgetData.categories;
+            activeCategoryId = currentCategories.length > 0 ? currentCategories[0].id : null;
+            totalBudgetInput.value = budgetData.totalBudget.toFixed(2);
+        }
 
-            const categoriesCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/categories`);
-            onSnapshot(categoriesCollectionRef, (querySnapshot) => {
-                currentCategories = [];
-                let totalInitial = 0;
+        function updateUI() {
+            calculateRemainingBalance();
+            renderCategoriesTabs();
+            updateMainContentLayout();
+        }
 
-                querySnapshot.forEach(doc => {
-                    const category = { id: doc.id, ...doc.data() };
-                    currentCategories.push(category);
-                    totalInitial += parseFloat(category.initialAmount || 0);
-                });
+        function updateMainContentLayout() {
+            if (currentCategories.length > 0) {
+                mainTitle.textContent = "CCC";
+                mainTitle.classList.remove('text-3xl', 'md:text-4xl', 'font-extrabold', 'leading-tight');
+                mainTitle.classList.add('text-xl', 'md:text-2xl', 'font-bold', 'mb-2');
                 
-                // Nova lógica: atualiza o Saldo Total apenas se a soma for maior
-                const currentTotalBudget = parseFloat(totalBudgetInput.value || 0);
-                if (totalInitial > currentTotalBudget) {
-                    saveBudgetTotal(totalInitial);
-                }
+                totalBudgetSection.classList.remove('p-3', 'flex-col', 'md:flex-row');
+                totalBudgetSection.classList.add('p-2', 'flex-row', 'md:flex-row', 'justify-between');
+                totalBudgetInput.classList.remove('text-2xl', 'text-center');
+                totalBudgetInput.classList.add('text-lg', 'text-right', 'w-24');
+                totalBudgetInput.parentElement.classList.remove('md:justify-center', 'md:space-x-4');
                 
-                // Lógica para compactar a UI após a primeira categoria ser adicionada
-                if (currentCategories.length > 0) {
-                    mainTitle.textContent = "CCC";
-                    mainTitle.classList.remove('text-3xl', 'md:text-4xl', 'font-extrabold', 'leading-tight');
-                    mainTitle.classList.add('text-xl', 'md:text-2xl', 'font-bold', 'mb-2');
-                    
-                    totalBudgetSection.classList.remove('p-3', 'flex-col', 'md:flex-row');
-                    totalBudgetSection.classList.add('p-2', 'flex-row', 'md:flex-row', 'justify-between');
-                    totalBudgetInput.classList.remove('text-2xl', 'text-center');
-                    totalBudgetInput.classList.add('text-lg', 'text-right', 'w-24');
-                    totalBudgetInput.parentElement.classList.remove('md:justify-center', 'md:space-x-4');
-                    
-                    summaryDisplay.classList.remove('hidden');
+                summaryDisplay.classList.remove('hidden');
+                noCategoriesMessage.classList.add('hidden');
+                activeCategoryContent.classList.remove('hidden');
+            } else {
+                mainTitle.textContent = "Calculadora com categorias";
+                mainTitle.classList.remove('text-xl', 'md:text-2xl', 'font-bold', 'mb-2');
+                mainTitle.classList.add('text-3xl', 'md:text-4xl', 'font-extrabold', 'leading-tight');
+                
+                totalBudgetSection.classList.remove('p-2', 'flex-row', 'md:flex-row', 'justify-between');
+                totalBudgetSection.classList.add('p-3', 'flex-col', 'md:flex-row');
+                totalBudgetInput.classList.remove('text-lg', 'text-right', 'w-24');
+                totalBudgetInput.classList.add('text-2xl', 'text-center');
+                totalBudgetInput.parentElement.classList.add('md:justify-center', 'md:space-x-4');
+                
+                summaryDisplay.classList.add('hidden');
+                noCategoriesMessage.classList.remove('hidden');
+                activeCategoryContent.classList.add('hidden');
+            }
+
+            const activeCategory = currentCategories.find(c => c.id === activeCategoryId);
+            if (activeCategory) {
+                categoryNameDisplay.textContent = activeCategory.name;
+                const spentInThisCategory = activeCategory.transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+                const currentAmount = parseFloat(activeCategory.initialAmount) - spentInThisCategory;
+                categoryCurrentAmountEl.textContent = `R$ ${currentAmount.toFixed(2)}`;
+                categoryInitialAmountEl.textContent = `Orçamento inicial: R$ ${parseFloat(activeCategory.initialAmount).toFixed(2)}`;
+                
+                // Lógica do indicador de gasto
+                const initialAmount = parseFloat(activeCategory.initialAmount);
+                if (initialAmount > 0) {
+                    let percentageSpent = (spentInThisCategory / initialAmount) * 100;
+                    spentLabel.textContent = `Gasto: R$ ${spentInThisCategory.toFixed(2)}`;
+                    spentPercentageEl.textContent = `${Math.min(percentageSpent, 100).toFixed(0)}%`;
+                    spentBar.style.width = `${Math.min(percentageSpent, 100)}%`;
+
+                    spentBar.classList.remove('bg-indigo-500', 'bg-red-500', 'bg-yellow-500');
+                    if (percentageSpent > 100) {
+                        spentBar.classList.add('bg-red-500');
+                    } else if (percentageSpent > 80) {
+                        spentBar.classList.add('bg-yellow-500');
+                    } else {
+                        spentBar.classList.add('bg-indigo-500');
+                    }
                 } else {
-                    mainTitle.textContent = "Calculadora com categorias";
-                    mainTitle.classList.remove('text-xl', 'md:text-2xl', 'font-bold', 'mb-2');
-                    mainTitle.classList.add('text-3xl', 'md:text-4xl', 'font-extrabold', 'leading-tight');
-                    
-                    totalBudgetSection.classList.remove('p-2', 'flex-row', 'md:flex-row', 'justify-between');
-                    totalBudgetSection.classList.add('p-3', 'flex-col', 'md:flex-row');
-                    totalBudgetInput.classList.remove('text-lg', 'text-right', 'w-24');
-                    totalBudgetInput.classList.add('text-2xl', 'text-center');
-                    totalBudgetInput.parentElement.classList.add('md:justify-center', 'md:space-x-4');
-                    
-                    summaryDisplay.classList.add('hidden');
+                    spentLabel.textContent = `Gasto: R$ ${spentInThisCategory.toFixed(2)}`;
+                    spentPercentageEl.textContent = `0%`;
+                    spentBar.style.width = `0%`;
                 }
 
-                renderCategoriesTabs();
-                calculateRemainingBalance();
-                updateMainUI();
-
-                loadingMessage.classList.add('hidden');
-                mainContent.classList.remove('hidden');
-            }, (error) => {
-                console.error("Erro ao ouvir as categorias:", error);
-            });
-        }
-
-        async function saveBudgetTotal(total) {
-            try {
-                const docRef = doc(db, `artifacts/${appId}/users/${userId}/budgets`, 'mainBudget');
-                await setDoc(docRef, { total: parseFloat(total) });
-            } catch (e) {
-                console.error("Erro ao salvar o Saldo Total:", e);
+                renderTransactionsList(activeCategory.transactions);
             }
         }
 
-        async function saveCategory(categoryData) {
-            try {
-                const docRef = doc(db, `artifacts/${appId}/users/${userId}/categories`, categoryData.id);
-                await setDoc(docRef, categoryData);
-            } catch (e) {
-                console.error("Erro ao salvar a categoria:", e);
-            }
-        }
-
-        async function deleteCategory(categoryId) {
-            try {
-                const docRef = doc(db, `artifacts/${appId}/users/${userId}/categories`, categoryId);
-                await deleteDoc(docRef);
-            } catch (e) {
-                console.error("Erro ao excluir a categoria:", e);
-            }
-        }
-
-        // --- Lógica da Aplicação e UI ---
         function calculateRemainingBalance() {
             const totalBudget = parseFloat(totalBudgetInput.value || 0);
             let totalSpent = 0;
@@ -448,54 +397,6 @@
             remainingValueEl.classList.toggle('text-green-600', remaining >= 0);
         }
 
-        function updateMainUI() {
-            if (currentCategories.length === 0) {
-                noCategoriesMessage.classList.remove('hidden');
-                activeCategoryContent.classList.add('hidden');
-                return;
-            }
-            noCategoriesMessage.classList.add('hidden');
-
-            const activeCategory = currentCategories.find(c => c.id === activeCategoryId);
-            if (!activeCategory) {
-                activeCategoryId = currentCategories[0].id;
-                updateMainUI();
-                return;
-            }
-
-            activeCategoryContent.classList.remove('hidden');
-            categoryNameDisplay.textContent = activeCategory.name;
-            const spentInThisCategory = activeCategory.transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
-            const currentAmount = parseFloat(activeCategory.initialAmount) - spentInThisCategory;
-            categoryCurrentAmountEl.textContent = `R$ ${currentAmount.toFixed(2)}`;
-            categoryInitialAmountEl.textContent = `Orçamento inicial: R$ ${parseFloat(activeCategory.initialAmount).toFixed(2)}`;
-            
-            // Lógica do indicador de gasto
-            const initialAmount = parseFloat(activeCategory.initialAmount);
-            if (initialAmount > 0) {
-                let percentageSpent = (spentInThisCategory / initialAmount) * 100;
-                spentLabel.textContent = `Gasto: R$ ${spentInThisCategory.toFixed(2)}`;
-                spentPercentageEl.textContent = `${Math.min(percentageSpent, 100).toFixed(0)}%`;
-                spentBar.style.width = `${Math.min(percentageSpent, 100)}%`;
-
-                // Nova lógica de cores
-                spentBar.classList.remove('bg-indigo-500', 'bg-red-500', 'bg-yellow-500');
-                if (percentageSpent > 100) {
-                    spentBar.classList.add('bg-red-500');
-                } else if (percentageSpent > 80) {
-                    spentBar.classList.add('bg-yellow-500');
-                } else {
-                    spentBar.classList.add('bg-indigo-500');
-                }
-            } else {
-                spentLabel.textContent = `Gasto: R$ ${spentInThisCategory.toFixed(2)}`;
-                spentPercentageEl.textContent = `0%`;
-                spentBar.style.width = `0%`;
-            }
-
-            renderTransactionsList(activeCategory.transactions);
-        }
-
         function renderCategoriesTabs() {
             categoriesContainer.innerHTML = '';
             currentCategories.forEach(category => {
@@ -504,7 +405,7 @@
                 tab.textContent = category.name;
                 tab.onclick = () => {
                     activeCategoryId = category.id;
-                    updateMainUI();
+                    updateMainContentLayout();
                     renderCategoriesTabs();
                 };
                 categoriesContainer.appendChild(tab);
@@ -544,19 +445,24 @@
             });
 
             transactionsList.querySelectorAll('.delete-transaction-btn').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
+                btn.addEventListener('click', () => {
                     const timestamp = parseInt(e.currentTarget.getAttribute('data-timestamp'));
                     const activeCategory = currentCategories.find(c => c.id === activeCategoryId);
                     if (activeCategory) {
-                        const newTransactions = activeCategory.transactions.filter(t => t.timestamp !== timestamp);
-                        await saveCategory({ ...activeCategory, transactions: newTransactions });
+                        activeCategory.transactions = activeCategory.transactions.filter(t => t.timestamp !== timestamp);
+                        saveData();
+                        updateUI();
                     }
                 });
             });
         }
 
         // --- Event Listeners ---
-        totalBudgetInput.addEventListener('change', () => saveBudgetTotal(totalBudgetInput.value));
+        totalBudgetInput.addEventListener('change', () => {
+            budgetData.totalBudget = parseFloat(totalBudgetInput.value);
+            saveData();
+            updateUI();
+        });
 
         incrementBtn.addEventListener('click', () => {
             let currentValue = parseFloat(multiplierInput.value) || 1;
@@ -580,7 +486,7 @@
             categoryModal.style.display = 'flex';
         });
 
-        modalConfirmBtn.addEventListener('click', async () => {
+        modalConfirmBtn.addEventListener('click', () => {
             const name = modalCategoryNameInput.value.trim();
             const initialAmount = parseFloat(modalCategoryAmountInput.value);
             
@@ -592,7 +498,16 @@
                 const newInitialAmount = parseFloat(modalCategoryAmountInput.value);
                 
                 if (name && categoryToUpdate && !isNaN(newInitialAmount) && newInitialAmount >= 0) {
-                    await saveCategory({ ...categoryToUpdate, name: name, initialAmount: newInitialAmount.toFixed(2) });
+                    categoryToUpdate.name = name;
+                    categoryToUpdate.initialAmount = newInitialAmount.toFixed(2);
+                    
+                    const totalInitial = currentCategories.reduce((sum, c) => sum + parseFloat(c.initialAmount), 0);
+                    if (totalInitial > budgetData.totalBudget) {
+                        budgetData.totalBudget = totalInitial;
+                    }
+                    saveData();
+                    updateUI();
+
                     categoryModal.style.display = 'none';
                     delete modalConfirmBtn.dataset.mode;
                     delete modalConfirmBtn.dataset.categoryId;
@@ -605,7 +520,12 @@
                         initialAmount: initialAmount.toFixed(2),
                         transactions: []
                     };
-                    await saveCategory(newCategory);
+                    currentCategories.push(newCategory);
+                    budgetData.totalBudget += initialAmount; // Adiciona ao saldo total
+                    activeCategoryId = newCategory.id; // Ativa a nova categoria
+
+                    saveData();
+                    updateUI();
                     categoryModal.style.display = 'none';
                 }
             }
@@ -615,7 +535,7 @@
             categoryModal.style.display = 'none';
         });
 
-        subtractBtn.addEventListener('click', async () => {
+        subtractBtn.addEventListener('click', () => {
             const baseAmount = parseFloat(spendInput.value);
             const multiplier = parseFloat(multiplierInput.value) || 1;
             const activeCategory = currentCategories.find(c => c.id === activeCategoryId);
@@ -627,8 +547,9 @@
                     amount: (baseAmount * multiplier).toFixed(2),
                     timestamp: Date.now()
                 };
-                const updatedTransactions = [...activeCategory.transactions, newTransaction];
-                await saveCategory({ ...activeCategory, transactions: updatedTransactions });
+                activeCategory.transactions.push(newTransaction);
+                saveData();
+                updateUI();
                 spendInput.value = '';
                 multiplierInput.value = '1';
             }
@@ -641,7 +562,6 @@
                 modalCategoryNameInput.value = activeCategory.name;
                 modalCategoryAmountInput.value = parseFloat(activeCategory.initialAmount);
                 modalCategoryAmountInput.style.display = 'block';
-                oldInitialAmount = parseFloat(activeCategory.initialAmount); // Salva o valor antigo
                 modalConfirmBtn.textContent = 'Salvar';
                 modalConfirmBtn.dataset.mode = 'edit';
                 modalConfirmBtn.dataset.categoryId = activeCategory.id;
@@ -653,11 +573,18 @@
             deleteModal.style.display = 'flex';
         });
 
-        deleteConfirmBtn.addEventListener('click', async () => {
-            if (activeCategoryId) {
-                await deleteCategory(activeCategoryId);
+        deleteConfirmBtn.addEventListener('click', () => {
+            const categoryToDeleteIndex = currentCategories.findIndex(c => c.id === activeCategoryId);
+            if (categoryToDeleteIndex !== -1) {
+                const category = currentCategories[categoryToDeleteIndex];
+                budgetData.totalBudget -= parseFloat(category.initialAmount);
+                currentCategories.splice(categoryToDeleteIndex, 1);
+                
+                activeCategoryId = currentCategories.length > 0 ? currentCategories[0].id : null;
+
+                saveData();
+                updateUI();
                 deleteModal.style.display = 'none';
-                activeCategoryId = null;
             }
         });
 
@@ -682,7 +609,12 @@
         });
 
         // Inicializa o aplicativo ao carregar a página
-        window.onload = initializeFirebase;
+        window.onload = () => {
+            loadData();
+            updateUI();
+            loadingMessage.classList.add('hidden');
+            mainContent.classList.remove('hidden');
+        };
     </script>
 </body>
 </html>
