@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="manifest" href="manifest.json">
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -988,6 +989,17 @@
         modalSessionCancelBtn.addEventListener('click', () => {
             sessionModal.style.display = 'none';
         });
+
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(registration => {
+                    console.log('Service Worker registrado com sucesso:', registration.scope);
+                }).catch(err => {
+                    console.log('Registro do Service Worker falhou:', err);
+                });
+            });
+        }
 
         // Inicializa o aplicativo ao carregar a página
         window.onload = () => {
