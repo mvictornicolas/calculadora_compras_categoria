@@ -1,0 +1,1 @@
+Criei esse aplicativo para facilitar a organização das compras de supermercado, permitindo separar a compra em categoria e ajudando a calcular os gastos de forma ágil pra não atrapalhar uma compra, mas também não fazer uma compra as cegas e acabar gastando mais do que o necessário
